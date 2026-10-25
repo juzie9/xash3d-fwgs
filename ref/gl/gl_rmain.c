@@ -941,7 +941,26 @@ static void R_DrawEntitiesOnList( void )
 	pglDisable( GL_BLEND );	// Trinity Render issues
 
 	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
-		R_DrawViewModel();
+	{
+		// gl_blur 1 blurs the world only: draw the viewmodel directly into
+		// the screen target, the final blur pass keeps it sharp with the
+		// help of the depth buffer
+		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ) && GL_ViewmodelAfterBlur( ))
+		{
+			GLint	old_viewport[4];
+
+			pglGetIntegerv( GL_VIEWPORT, old_viewport );
+			GL_BindViewmodelTarget();
+			R_DrawViewModel();
+			GL_BindSceneTarget();
+			pglViewport( old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3] );
+			pglClearColor( 0.5f, 0.5f, 0.5f, 1.0f ); // restore the scene clear color
+		}
+		else
+		{
+			R_DrawViewModel();
+		}
+	}
 	gEngfuncs.CL_ExtraUpdate();
 
 	GL_CheckForErrors();

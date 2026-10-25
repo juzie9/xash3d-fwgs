@@ -189,6 +189,7 @@ typedef struct
 	GLuint fbo;
 	GLuint color; // color renderbuffer, when not RT_COLOR_TEXTURE
 	GLuint depth;
+	GLuint depthtex; // depth texture, used by the depth of field blur
 	int texnum;   // color texture, when RT_COLOR_TEXTURE
 	int width;
 	int height;
@@ -200,6 +201,8 @@ typedef struct
 	gl_rendertarget_t msaa;   // 3D passes when multisampling, resolved into scene
 	gl_rendertarget_t scene;  // 3D passes, sized by r_scene_scale
 	gl_rendertarget_t screen; // 2D pass, sized like the window
+	gl_rendertarget_t blur;   // horizontal blur result, half of the window size
+	gl_rendertarget_t blur2;  // vertical blur result, half of the window size
 	qboolean failed;
 } gl_rendertargets_t;
 
@@ -365,6 +368,25 @@ static inline void GL_GetSceneTargetSize( int *width, int *height )
 	*width = gpGlobals->width;
 	*height = gpGlobals->height;
 }
+#endif // !XASH_GLES || !XASH_GL_STATIC
+
+//
+// gl_blur.c
+//
+#if !XASH_GLES || !XASH_GL_STATIC
+qboolean GL_BlurActive( void );
+qboolean GL_ViewmodelAfterBlur( void );
+qboolean GL_BlurDofActive( void );
+void GL_BlurFreePrograms( void );
+void GL_BlurSceneTarget( const gl_rendertarget_t *scene, const gl_rendertarget_t *blur, const gl_rendertarget_t *blur2, const gl_rendertarget_t *screen );
+void GL_BindViewmodelTarget( void );
+#else
+static inline qboolean GL_BlurActive( void ) { return false; }
+static inline qboolean GL_ViewmodelAfterBlur( void ) { return false; }
+static inline qboolean GL_BlurDofActive( void ) { return false; }
+static inline void GL_BlurFreePrograms( void ) { }
+static inline void GL_BlurSceneTarget( const gl_rendertarget_t *, const gl_rendertarget_t *, const gl_rendertarget_t *, const gl_rendertarget_t * ) { }
+static inline void GL_BindViewmodelTarget( void ) { }
 #endif // !XASH_GLES || !XASH_GL_STATIC
 
 //
@@ -789,6 +811,12 @@ extern convar_t	gl_stencilbits;
 extern convar_t	gl_overbright;
 extern convar_t gl_fog;
 extern convar_t	gl_litwater_force;
+extern convar_t	gl_blur;
+extern convar_t	gl_blur_radius;
+extern convar_t	gl_blur_focus;
+extern convar_t	gl_blur_focus_range;
+extern convar_t	gl_blur_darken;
+extern convar_t	gl_blur_contrast;
 
 extern convar_t	r_lighting_ambient;
 extern convar_t	r_studio_lambert;

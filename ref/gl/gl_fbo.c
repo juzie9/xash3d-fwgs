@@ -27,6 +27,9 @@ static void GL_FreeRenderTarget( gl_rendertarget_t *target )
 	if( target->depth )
 		pglDeleteRenderbuffers( 1, &target->depth );
 
+	if( target->depthtex )
+		pglDeleteTextures( 1, &target->depthtex );
+
 	if( target->texnum )
 		GL_FreeTexture( target->texnum );
 
@@ -127,8 +130,11 @@ void GL_FreeRenderTargets( void )
 {
 	GL_FreeRenderTarget( &tr.targets.msaa );
 	GL_FreeRenderTarget( &tr.targets.scene );
+	GL_FreeRenderTarget( &tr.targets.blur );
+	GL_FreeRenderTarget( &tr.targets.blur2 );
 	GL_FreeRenderTarget( &tr.targets.screen );
 	glState.sceneTargetDrawn = false;
+	GL_BlurFreePrograms();
 }
 
 static int GL_SceneTargetSamples( void )
@@ -198,7 +204,8 @@ void GL_CheckRenderTargets( void )
 {
 	int width, height;
 	float scale = bound( 0.1f, r_scene_scale.value, 8.0f );
-	qboolean wanted = scale != 1.0f;
+	qboolean blur = GL_BlurActive();
+	qboolean wanted = scale != 1.0f || blur;
 
 	GL_GetWindowSize( &width, &height );
 
@@ -207,8 +214,17 @@ void GL_CheckRenderTargets( void )
 		ClearBits( r_scene_scale.flags, FCVAR_CHANGED );
 		tr.targets.failed = false;
 
-		if( wanted && !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
+		if( scale != 1.0f && !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
 			gEngfuncs.Con_Printf( S_WARN "r_scene_scale requires framebuffer objects, which are not supported\n" );
+	}
+
+	if( FBitSet( gl_blur.flags, FCVAR_CHANGED ))
+	{
+		ClearBits( gl_blur.flags, FCVAR_CHANGED );
+		tr.targets.failed = false;
+
+		if( blur && !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
+			gEngfuncs.Con_Printf( S_WARN "gl_blur requires framebuffer objects, which are not supported\n" );
 	}
 
 	if( !wanted || !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
@@ -223,7 +239,9 @@ void GL_CheckRenderTargets( void )
 
 	if( GL_RenderTargetsActive( ) && tr.targets.scene.width == scene_width && tr.targets.scene.height == scene_height
 		&& tr.targets.screen.width == width && tr.targets.screen.height == height
-		&& tr.targets.msaa.samples == samples )
+		&& tr.targets.msaa.samples == samples
+		&& blur == ( tr.targets.blur.fbo != 0 )
+		&& ( tr.targets.scene.depthtex != 0 ) == ( blur && GL_BlurDofActive( ) && GL_Support( GL_DEPTH_TEXTURE )))
 	{
 		pglBindFramebuffer( GL_FRAMEBUFFER, tr.targets.screen.fbo );
 		glState.sceneTargetDrawn = false;
@@ -253,6 +271,27 @@ void GL_CheckRenderTargets( void )
 		tr.targets.failed = true;
 		gEngfuncs.Con_Printf( S_ERROR "r_scene_scale: can't create render targets, rendering directly to the window\n" );
 		return;
+	}
+
+	if( blur && ( !GL_CreateRenderTarget( &tr.targets.blur, "*fbo_blur", Q_max( 1, width / 2 ), Q_max( 1, height / 2 ), 0, RT_COLOR_TEXTURE )
+		|| !GL_CreateRenderTarget( &tr.targets.blur2, "*fbo_blur2", Q_max( 1, width / 2 ), Q_max( 1, height / 2 ), 0, RT_COLOR_TEXTURE )))
+	{
+		GL_FreeRenderTargets();
+		tr.targets.failed = true;
+		gEngfuncs.Con_Printf( S_ERROR "gl_blur: can't create %dx%d blur targets, rendering directly to the window\n", width / 2, height / 2 );
+		return;
+	}
+
+	if( blur && GL_BlurDofActive( ) && GL_Support( GL_DEPTH_TEXTURE ))
+	{
+		pglGenTextures( 1, &tr.targets.scene.depthtex );
+		pglBindTexture( GL_TEXTURE_2D, tr.targets.scene.depthtex );
+		pglTexImage2D( GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, scene_width, scene_height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL );
+		pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+		pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+		pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		pglBindTexture( GL_TEXTURE_2D, 0 );
 	}
 
 	gEngfuncs.Con_Reportf( "%s: scene %dx%d (%dx MSAA), screen %dx%d\n", __func__, scene_width, scene_height, samples, width, height );
@@ -370,7 +409,26 @@ void GL_BindScreenTarget( void )
 		if( tr.targets.msaa.fbo )
 			GL_BlitTarget( &tr.targets.msaa, tr.targets.scene.fbo, tr.targets.scene.width, tr.targets.scene.height, GL_NEAREST );
 
-		if( GL_Support( GL_FRAMEBUFFER_BLIT_EXT ))
+		// copy the scene depth for the depth of field blur
+		if( tr.targets.scene.depthtex && GL_BlurDofActive( ))
+		{
+			pglBindFramebuffer( GL_READ_FRAMEBUFFER, tr.targets.msaa.fbo ? tr.targets.msaa.fbo : tr.targets.scene.fbo );
+			// depthtex is a raw GL texture name: bind it directly and
+			// invalidate the cache, the blur pass rebinds its own textures
+			GL_SelectTexture( XASH_TEXTURE0 );
+			pglBindTexture( GL_TEXTURE_2D, tr.targets.scene.depthtex );
+			glState.currentTextures[0] = 0;
+			glState.currentTexturesIndex[0] = 0;
+			pglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, 0, 0, tr.targets.scene.width, tr.targets.scene.height );
+		}
+
+		if( tr.targets.blur.fbo && GL_BlurActive( ))
+		{
+			// two-pass separable gaussian blur: scene -> blur -> blur2 -> screen,
+			// the 2D stuff is drawn on top of the blurred scene afterwards
+			GL_BlurSceneTarget( &tr.targets.scene, &tr.targets.blur, &tr.targets.blur2, screen );
+		}
+		else if( GL_Support( GL_FRAMEBUFFER_BLIT_EXT ))
 		{
 			GL_BlitTarget( &tr.targets.scene, screen->fbo, screen->width, screen->height, filter );
 		}

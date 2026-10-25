@@ -24,6 +24,12 @@ CVAR_DEFINE_AUTO( gl_stencilbits, "8", FCVAR_GLCONFIG|FCVAR_READ_ONLY, "pixelfor
 CVAR_DEFINE_AUTO( gl_overbright, "1", FCVAR_GLCONFIG, "overbrights" );
 CVAR_DEFINE_AUTO( gl_fog, "1", FCVAR_GLCONFIG, "allow for rendering fog using built-in OpenGL fog implementation" );
 CVAR_DEFINE_AUTO( gl_litwater_force, "0", FCVAR_GLCONFIG, "force enable lightmapped water, even if support not declared in the map" );
+CVAR_DEFINE_AUTO( gl_blur, "0", FCVAR_GLCONFIG, "gaussian blur mode: 0 - disabled, 1 - blur the world only (viewmodel stays sharp), 2 - high quality blur of everything" );
+CVAR_DEFINE_AUTO( gl_blur_radius, "2.0", FCVAR_GLCONFIG, "gaussian blur radius in screen pixels (0.1 and up, no upper limit)" );
+CVAR_DEFINE_AUTO( gl_blur_focus, "0", FCVAR_GLCONFIG, "distance in world units from which the scene loses focus, 0 disables the depth of field" );
+CVAR_DEFINE_AUTO( gl_blur_focus_range, "512", FCVAR_GLCONFIG, "world distance over which the defocus ramps up beyond gl_blur_focus" );
+CVAR_DEFINE_AUTO( gl_blur_darken, "0.15", FCVAR_GLCONFIG, "darken the defocused background (0.0 to 1.0), 0 disables" );
+CVAR_DEFINE_AUTO( gl_blur_contrast, "0", FCVAR_GLCONFIG, "contrast adjustment of the blurred background (-0.5 to 1.0)" );
 CVAR_DEFINE_AUTO( r_lighting_ambient, "0.3", FCVAR_GLCONFIG, "map ambient lighting scale" );
 CVAR_DEFINE_AUTO( r_detailtextures, "1", FCVAR_GLCONFIG, "enable detail textures support" );
 CVAR_DEFINE_AUTO( r_novis, "0", 0, "ignore vis information (perfomance test)" );
@@ -1245,6 +1251,12 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_vbo_detail );
 	gEngfuncs.Cvar_RegisterVariable( &r_large_lightmaps );
 	gEngfuncs.Cvar_RegisterVariable( &r_scene_scale );
+	gEngfuncs.Cvar_RegisterVariable( &gl_blur );
+	gEngfuncs.Cvar_RegisterVariable( &gl_blur_radius );
+	gEngfuncs.Cvar_RegisterVariable( &gl_blur_focus );
+	gEngfuncs.Cvar_RegisterVariable( &gl_blur_focus_range );
+	gEngfuncs.Cvar_RegisterVariable( &gl_blur_darken );
+	gEngfuncs.Cvar_RegisterVariable( &gl_blur_contrast );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );
