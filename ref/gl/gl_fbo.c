@@ -136,6 +136,7 @@ void GL_FreeRenderTargets( void )
 	glState.sceneTargetDrawn = false;
 	GL_BlurFreePrograms();
 	GL_VignetteFreePrograms();
+	GL_FilterFreePrograms();
 }
 
 static int GL_SceneTargetSamples( void )
@@ -207,7 +208,8 @@ void GL_CheckRenderTargets( void )
 	float scale = bound( 0.1f, r_scene_scale.value, 8.0f );
 	qboolean blur = GL_BlurActive();
 	qboolean vignette = GL_VignetteActive();
-	qboolean wanted = scale != 1.0f || blur || vignette;
+	qboolean filter = GL_FilterActive();
+	qboolean wanted = scale != 1.0f || blur || vignette || filter;
 
 	GL_GetWindowSize( &width, &height );
 
@@ -438,6 +440,10 @@ void GL_BindScreenTarget( void )
 			// two-pass separable gaussian blur: scene -> blur -> blur2 -> screen,
 			// the 2D stuff is drawn on top of the blurred scene afterwards
 			GL_BlurSceneTarget( &tr.targets.scene, &tr.targets.blur, &tr.targets.blur2, screen );
+		}
+		else if( GL_FilterActive( ) && GL_FilterScenePass( &tr.targets.scene, screen ))
+		{
+			// the filter chain applied to the plain scene copy
 		}
 		else if( GL_Support( GL_FRAMEBUFFER_BLIT_EXT ))
 		{

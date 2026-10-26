@@ -14,6 +14,7 @@ GNU General Public License for more details.
 */
 
 #include "gl_local.h"
+#include "gl_filter.h"
 
 #if !XASH_GLES || !XASH_GL_STATIC
 
@@ -35,6 +36,7 @@ static GLint	s_comp_loc_focus;
 static GLint	s_comp_loc_range;
 static GLint	s_comp_loc_darken;
 static GLint	s_comp_loc_contrast;
+static filter_locs_t s_filter_locs;
 static qboolean	s_shaders_tried;
 
 static const char *blur_vs =
@@ -73,6 +75,8 @@ static const char *composite_fs =
 	"uniform float u_range;\n"
 	"uniform float u_darken;\n"
 	"uniform float u_contrast;\n"
+	FILTER_GLSL_UNIFORMS
+	FILTER_GLSL_MAIN
 	"void main( void )\n"
 	"{\n"
 	"	vec2 uv = gl_TexCoord[0].xy;\n"
@@ -89,6 +93,7 @@ static const char *composite_fs =
 	"	vec3 color = mix( sharp, blurred, amount );\n"
 	"	color *= 1.0 - u_darken * amount;\n"
 	"	color = ( color - 0.5 ) * ( 1.0 + u_contrast ) + 0.5;\n"
+	"	color = XashFilter( color, uv );\n"
 	"	gl_FragColor = vec4( color, 1.0 );\n"
 	"}\n";
 
@@ -197,6 +202,7 @@ static qboolean GL_BlurInitShaders( void )
 		s_comp_loc_range = pglGetUniformLocationARB( s_composite_program, "u_range" );
 		s_comp_loc_darken = pglGetUniformLocationARB( s_composite_program, "u_darken" );
 		s_comp_loc_contrast = pglGetUniformLocationARB( s_composite_program, "u_contrast" );
+		GL_FilterInitProgram( s_composite_program, &s_filter_locs );
 	}
 
 	if( !s_blur_program || !s_composite_program )
@@ -439,6 +445,7 @@ static void GL_BlurCompositePass( const gl_rendertarget_t *scene, const gl_rende
 	pglUniform1fARB( s_comp_loc_range, Q_max( 1.0f, gl_blur_focus_range.value ));
 	pglUniform1fARB( s_comp_loc_darken, bound( 0.0f, gl_blur_darken.value, 1.0f ));
 	pglUniform1fARB( s_comp_loc_contrast, bound( -0.5f, gl_blur_contrast.value, 1.0f ));
+	GL_FilterSetUniforms( &s_filter_locs, 0, scene );
 
 	GL_BlurDrawQuad( screen );
 

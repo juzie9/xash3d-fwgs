@@ -383,6 +383,9 @@ void GL_BindViewmodelTarget( void );
 qboolean GL_VignetteActive( void );
 qboolean GL_VignetteDraw( const gl_rendertarget_t *screen );
 void GL_VignetteFreePrograms( void );
+qboolean GL_FilterActive( void );
+qboolean GL_FilterScenePass( const gl_rendertarget_t *scene, const gl_rendertarget_t *screen );
+void GL_FilterFreePrograms( void );
 #else
 static inline qboolean GL_BlurActive( void ) { return false; }
 static inline qboolean GL_ViewmodelAfterBlur( void ) { return false; }
@@ -393,6 +396,9 @@ static inline void GL_BindViewmodelTarget( void ) { }
 static inline qboolean GL_VignetteActive( void ) { return false; }
 static inline qboolean GL_VignetteDraw( const gl_rendertarget_t * ) { return false; }
 static inline void GL_VignetteFreePrograms( void ) { }
+static inline qboolean GL_FilterActive( void ) { return false; }
+static inline qboolean GL_FilterScenePass( const gl_rendertarget_t *, const gl_rendertarget_t * ) { return false; }
+static inline void GL_FilterFreePrograms( void ) { }
 #endif // !XASH_GLES || !XASH_GL_STATIC
 
 //
@@ -827,6 +833,17 @@ extern convar_t	gl_vignette;
 extern convar_t	gl_vignette_strength;
 extern convar_t	gl_vignette_radius;
 extern convar_t	gl_vignette_softness;
+extern convar_t	gl_filters;
+extern convar_t	gl_filters_sharpen;
+extern convar_t	gl_filters_exposure;
+extern convar_t	gl_filters_contrast;
+extern convar_t	gl_filters_highlights;
+extern convar_t	gl_filters_shadows;
+extern convar_t	gl_filters_grayscale;
+extern convar_t	gl_filters_hue;
+extern convar_t	gl_filters_hue_intensity;
+extern convar_t	gl_filters_temperature;
+extern convar_t	gl_filters_vibrance;
 
 extern convar_t	r_lighting_ambient;
 extern convar_t	r_studio_lambert;

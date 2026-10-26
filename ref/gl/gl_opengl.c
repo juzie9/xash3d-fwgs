@@ -34,6 +34,17 @@ CVAR_DEFINE_AUTO( gl_vignette, "0", FCVAR_GLCONFIG, "enable the vignette post-pr
 CVAR_DEFINE_AUTO( gl_vignette_strength, "0.45", FCVAR_GLCONFIG, "vignette corner darkening strength (0.0 to 1.0)" );
 CVAR_DEFINE_AUTO( gl_vignette_radius, "0.8", FCVAR_GLCONFIG, "distance from the center where the vignette falloff is centered (0.0 and up)" );
 CVAR_DEFINE_AUTO( gl_vignette_softness, "0.35", FCVAR_GLCONFIG, "width of the vignette falloff transition (0.01 and up)" );
+CVAR_DEFINE_AUTO( gl_filters, "1", FCVAR_GLCONFIG, "master switch for the screen filter system (0/1)" );
+CVAR_DEFINE_AUTO( gl_filters_sharpen, "0.4", FCVAR_GLCONFIG, "edge sharpening strength (0.0 to 2.0, 0 disables)" );
+CVAR_DEFINE_AUTO( gl_filters_exposure, "1.0", FCVAR_GLCONFIG, "exposure multiplier (0.5 to 2.0, 1.0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_contrast, "1.08", FCVAR_GLCONFIG, "contrast factor (0.5 to 1.5, 1.0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_highlights, "0", FCVAR_GLCONFIG, "highlight adjustment (-1.0 to 1.0, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_shadows, "0.15", FCVAR_GLCONFIG, "shadow adjustment (-1.0 to 1.0, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_grayscale, "0", FCVAR_GLCONFIG, "grayscale blend (0.0 to 1.0, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_hue, "0", FCVAR_GLCONFIG, "hue shift in degrees (-180 to 180, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_hue_intensity, "0", FCVAR_GLCONFIG, "hue shift intensity (0.0 to 1.0, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_temperature, "0.02", FCVAR_GLCONFIG, "color temperature (-1.0 cool to 1.0 warm, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_filters_vibrance, "0.35", FCVAR_GLCONFIG, "vibrance (-1.0 to 1.0, 0 neutral)" );
 CVAR_DEFINE_AUTO( r_lighting_ambient, "0.3", FCVAR_GLCONFIG, "map ambient lighting scale" );
 CVAR_DEFINE_AUTO( r_detailtextures, "1", FCVAR_GLCONFIG, "enable detail textures support" );
 CVAR_DEFINE_AUTO( r_novis, "0", 0, "ignore vis information (perfomance test)" );
@@ -1267,6 +1278,17 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_vignette_strength );
 	gEngfuncs.Cvar_RegisterVariable( &gl_vignette_radius );
 	gEngfuncs.Cvar_RegisterVariable( &gl_vignette_softness );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_sharpen );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_exposure );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_contrast );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_highlights );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_shadows );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_grayscale );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_hue );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_hue_intensity );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_temperature );
+	gEngfuncs.Cvar_RegisterVariable( &gl_filters_vibrance );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );
