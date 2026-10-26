@@ -84,6 +84,9 @@ Studio models are position independent, so the cache manager can move them.
 #define STUDIO_NF_TWOSIDE		0x1000	// render mesh as twosided
 #define STUDIO_NF_HEIGHTMAP		0x2000
 
+#define STUDIO_NF_UV_SCROLL_LEFT	0x4000	// scroll texture UVs to the left
+#define STUDIO_NF_UV_SCROLL_RIGHT	0x8000	// scroll texture UVs to the right
+
 #define STUDIO_NF_NODRAW		(1U<<16)	// failed to create shader for this mesh
 #define STUDIO_NF_NODLIGHT		(1U<<17)	// failed to create dlight shader for this mesh
 #define STUDIO_NF_NOSUNLIGHT		(1U<<18)	// failed to create sun light shader for this mesh

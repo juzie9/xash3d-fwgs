@@ -167,6 +167,11 @@ void R_Set2DMode( qboolean enable )
 
 		GL_Cull( GL_NONE );
 
+		// the studio renderer may leave a UV scroll texture matrix on unit 0,
+		// the 2D pass always expects identity texture coordinates
+		GL_SelectTexture( XASH_TEXTURE0 );
+		GL_LoadIdentityTexMatrix();
+
 		pglDepthMask( GL_FALSE );
 		pglDisable( GL_DEPTH_TEST );
 		pglEnable( GL_ALPHA_TEST );

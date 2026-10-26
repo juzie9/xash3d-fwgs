@@ -123,6 +123,7 @@ typedef struct
 CVAR_DEFINE_AUTO( r_studio_sort_textures, "0", FCVAR_GLCONFIG, "change draw order for additive meshes" );
 CVAR_DEFINE_AUTO( r_studio_drawelements, "1", FCVAR_GLCONFIG, "use glDrawElements for studiomodels" );
 CVAR_DEFINE_AUTO( r_studio_builtin_renderer, "0", 0, "use built-in studio model renderer instead of the one provided by client library (debugging)" );
+CVAR_DEFINE_AUTO( r_studio_uv_scroll_speed, "0.1", FCVAR_GLCONFIG, "studio texture UV scroll speed in texture units per second" );
 static cvar_t			*cl_righthand = NULL;
 
 static r_studio_interface_t	*pStudioDraw;
@@ -1470,6 +1471,8 @@ static void R_LightStrength( int bone, vec3_t localpos, vec4_t light[MAX_LOCALLI
 	}
 }
 
+static void R_StudioSetupUVScroll( int flags );
+
 /*
 ===============
 R_StudioSetupSkin
@@ -1491,8 +1494,47 @@ static void R_StudioSetupSkin( studiohdr_t *ptexturehdr, int index )
 	if( !ptexture ) ptexture = (mstudiotexture_t *)((byte *)ptexturehdr + ptexturehdr->textureindex); // fallback
 
 	if( r_lightmap->value && !r_fullbright->value )
+	{
 		GL_Bind( XASH_TEXTURE0, tr.whiteTexture );
-	else GL_Bind( XASH_TEXTURE0, ptexture[index].index );
+		R_StudioSetupUVScroll( 0 );
+	}
+	else
+	{
+		GL_Bind( XASH_TEXTURE0, ptexture[index].index );
+		R_StudioSetupUVScroll( ptexture[index].flags );
+	}
+}
+
+/*
+================
+R_StudioSetupUVScroll
+
+moves the texture along the S axis with the texture matrix: the offset
+is time-based, so the scroll speed is frame-rate independent. Sampling
+further right along S makes the pattern visually move left and vice
+versa. Setting both scroll flags is an invalid combination and keeps
+the static UV layout.
+================
+*/
+static void R_StudioSetupUVScroll( int flags )
+{
+	matrix4x4 m;
+	GLfloat glmatrix[16];
+
+	Matrix4x4_LoadIdentity( m );
+
+	if( FBitSet( flags, STUDIO_NF_UV_SCROLL_LEFT ) != FBitSet( flags, STUDIO_NF_UV_SCROLL_RIGHT ))
+	{
+		const float offs = g_studio.time * r_studio_uv_scroll_speed.value;
+
+		if( FBitSet( flags, STUDIO_NF_UV_SCROLL_LEFT ))
+			m[0][3] = offs;	// the pattern moves left
+		else m[0][3] = -offs;	// the pattern moves right
+	}
+
+	Matrix4x4_ToArrayFloatGL( m, glmatrix );
+	GL_LoadTexMatrixExt( glmatrix );
+	pglMatrixMode( GL_MODELVIEW );
 }
 
 /*
