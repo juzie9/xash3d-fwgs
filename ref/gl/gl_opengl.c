@@ -263,8 +263,9 @@ static const dllfunc_t drawrangeelementsextfuncs[] MAYBE_UNUSED =
 // mangling in gl2shim???
 // still need resolve some ext dynamicly, and mangling beginend wrappers will help only with LTO
 // anyway this will not work with gl-wes/nanogl, we do not link to libGLESv2, so skip this now
-#if !XASH_GL_STATIC
-static const dllfunc_t mapbufferrangefuncs[] =
+// the tables are declared for static wrappers too: GL_CALL expands to plain
+// names there and the extension checks below only need the names
+static const dllfunc_t mapbufferrangefuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glMapBufferRange ) },
 { GL_CALL( glFlushMappedBufferRange ) },
@@ -273,17 +274,17 @@ static const dllfunc_t mapbufferrangefuncs[] =
 #endif
 };
 
-static const dllfunc_t drawrangeelementsbasevertexfuncs[] =
+static const dllfunc_t drawrangeelementsbasevertexfuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glDrawRangeElementsBaseVertex ) },
 };
 
-static const dllfunc_t bufferstoragefuncs[] =
+static const dllfunc_t bufferstoragefuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glBufferStorage ) },
 };
 
-static const dllfunc_t framebufferobjectfuncs[] =
+static const dllfunc_t framebufferobjectfuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glIsRenderbuffer ) },
 { GL_CALL( glBindRenderbuffer ) },
@@ -301,12 +302,12 @@ static const dllfunc_t framebufferobjectfuncs[] =
 { GL_CALL( glGetFramebufferAttachmentParameteriv ) },
 };
 
-static const dllfunc_t framebufferblitfuncs[] =
+static const dllfunc_t framebufferblitfuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glBlitFramebuffer ) },
 };
 
-static const dllfunc_t framebuffermultisamplefuncs[] =
+static const dllfunc_t framebuffermultisamplefuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glRenderbufferStorageMultisample ) },
 };
@@ -399,7 +400,7 @@ Commented out lines left there intentionally to prevent usage on core/gles
 ==================
 */
 
-static const dllfunc_t shaderobjectsfuncs_gles[] =
+static const dllfunc_t shaderobjectsfuncs_gles[] MAYBE_UNUSED =
 {
 { "glDeleteShader"             , (void **)&pglDeleteObjectARB },
 //{ "glGetHandleARB"           , (void **)&pglGetHandleARB },
@@ -459,7 +460,7 @@ static const dllfunc_t shaderobjectsfuncs_gles[] =
 //{ "glVertexAttrib4ubv"            , (void **)&pglVertexAttrib4ubvARB },
 };
 
-static const dllfunc_t vaofuncs[] =
+static const dllfunc_t vaofuncs[] MAYBE_UNUSED =
 {
 { GL_CALL( glBindVertexArray ) },
 { GL_CALL( glDeleteVertexArrays ) },
@@ -480,8 +481,6 @@ static const dllfunc_t multitexturefuncs_es2[] MAYBE_UNUSED =
 { GL_CALL( glActiveTexture ) },
 { GL_CALL( glActiveTextureARB ) },
 };
-
-#endif // !XASH_GL_STATIC
 
 /*
 ========================
@@ -1021,7 +1020,10 @@ static void GL_InitExtensionsBigGL( void )
 	GL_CheckExtension( "GL_ARB_vertex_buffer_object", vbofuncs, ARRAYSIZE( vbofuncs ), "gl_vertex_buffer_object", GL_ARB_VERTEX_BUFFER_OBJECT_EXT, 2.0 );
 	GL_CheckExtension( "GL_ARB_texture_multisample", multisampletexfuncs, ARRAYSIZE( multisampletexfuncs ), "gl_texture_multisample", GL_TEXTURE_MULTISAMPLE, 0 );
 	GL_CheckExtension( "GL_ARB_texture_compression_bptc", NULL, 0, "gl_texture_bptc_compression", GL_ARB_TEXTURE_COMPRESSION_BPTC, 0 );
-#if !XASH_GL_STATIC
+	// static wrappers (gl4es) export these entry points as regular symbols and
+	// advertise the extensions in the extension string, so the checks must run
+	// for them too: otherwise framebuffer objects and GLSL shaders stay
+	// disabled and post-processing effects like the blur never activate
 	if( glConfig.context == CONTEXT_TYPE_GL_CORE )
 		GL_CheckExtension( "shader_objects", shaderobjectsfuncs_gles, ARRAYSIZE( shaderobjectsfuncs_gles ), "gl_shaderobjects", GL_SHADER_OBJECTS_EXT, 2.0 );
 	else
@@ -1041,7 +1043,6 @@ static void GL_InitExtensionsBigGL( void )
 		GL_CheckExtension( "GL_EXT_framebuffer_blit", framebufferblitfuncs, ARRAYSIZE( framebufferblitfuncs ), "gl_framebuffer_object", GL_FRAMEBUFFER_BLIT_EXT, 0 );
 		GL_CheckExtension( "GL_EXT_framebuffer_multisample", framebuffermultisamplefuncs, ARRAYSIZE( framebuffermultisamplefuncs ), "gl_framebuffer_object", GL_FRAMEBUFFER_MULTISAMPLE_EXT, 0 );
 	}
-#endif
 	if( GL_CheckExtension( "GL_ARB_shading_language_100", NULL, 0, NULL, GL_SHADER_GLSL100_EXT, 2.0 ))
 	{
 		pglGetIntegerv( GL_MAX_TEXTURE_COORDS_ARB, &glConfig.max_texture_coords );
