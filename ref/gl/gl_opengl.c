@@ -30,6 +30,10 @@ CVAR_DEFINE_AUTO( gl_blur_focus, "0", FCVAR_GLCONFIG, "distance in world units f
 CVAR_DEFINE_AUTO( gl_blur_focus_range, "512", FCVAR_GLCONFIG, "world distance over which the defocus ramps up beyond gl_blur_focus" );
 CVAR_DEFINE_AUTO( gl_blur_darken, "0.15", FCVAR_GLCONFIG, "darken the defocused background (0.0 to 1.0), 0 disables" );
 CVAR_DEFINE_AUTO( gl_blur_contrast, "0", FCVAR_GLCONFIG, "contrast adjustment of the blurred background (-0.5 to 1.0)" );
+CVAR_DEFINE_AUTO( gl_vignette, "0", FCVAR_GLCONFIG, "enable the vignette post-processing effect (0/1)" );
+CVAR_DEFINE_AUTO( gl_vignette_strength, "0.45", FCVAR_GLCONFIG, "vignette corner darkening strength (0.0 to 1.0)" );
+CVAR_DEFINE_AUTO( gl_vignette_radius, "0.8", FCVAR_GLCONFIG, "distance from the center where the vignette falloff is centered (0.0 and up)" );
+CVAR_DEFINE_AUTO( gl_vignette_softness, "0.35", FCVAR_GLCONFIG, "width of the vignette falloff transition (0.01 and up)" );
 CVAR_DEFINE_AUTO( r_lighting_ambient, "0.3", FCVAR_GLCONFIG, "map ambient lighting scale" );
 CVAR_DEFINE_AUTO( r_detailtextures, "1", FCVAR_GLCONFIG, "enable detail textures support" );
 CVAR_DEFINE_AUTO( r_novis, "0", 0, "ignore vis information (perfomance test)" );
@@ -1257,6 +1261,10 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_blur_focus_range );
 	gEngfuncs.Cvar_RegisterVariable( &gl_blur_darken );
 	gEngfuncs.Cvar_RegisterVariable( &gl_blur_contrast );
+	gEngfuncs.Cvar_RegisterVariable( &gl_vignette );
+	gEngfuncs.Cvar_RegisterVariable( &gl_vignette_strength );
+	gEngfuncs.Cvar_RegisterVariable( &gl_vignette_radius );
+	gEngfuncs.Cvar_RegisterVariable( &gl_vignette_softness );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );

@@ -135,6 +135,7 @@ void GL_FreeRenderTargets( void )
 	GL_FreeRenderTarget( &tr.targets.screen );
 	glState.sceneTargetDrawn = false;
 	GL_BlurFreePrograms();
+	GL_VignetteFreePrograms();
 }
 
 static int GL_SceneTargetSamples( void )
@@ -205,7 +206,8 @@ void GL_CheckRenderTargets( void )
 	int width, height;
 	float scale = bound( 0.1f, r_scene_scale.value, 8.0f );
 	qboolean blur = GL_BlurActive();
-	qboolean wanted = scale != 1.0f || blur;
+	qboolean vignette = GL_VignetteActive();
+	qboolean wanted = scale != 1.0f || blur || vignette;
 
 	GL_GetWindowSize( &width, &height );
 
@@ -225,6 +227,15 @@ void GL_CheckRenderTargets( void )
 
 		if( blur && !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
 			gEngfuncs.Con_Printf( S_WARN "gl_blur requires framebuffer objects, which are not supported\n" );
+	}
+
+	if( FBitSet( gl_vignette.flags, FCVAR_CHANGED ))
+	{
+		ClearBits( gl_vignette.flags, FCVAR_CHANGED );
+		tr.targets.failed = false;
+
+		if( vignette && !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
+			gEngfuncs.Con_Printf( S_WARN "gl_vignette requires framebuffer objects, which are not supported\n" );
 	}
 
 	if( !wanted || !GL_Support( GL_FRAMEBUFFER_OBJECT_EXT ))
@@ -456,6 +467,11 @@ void GL_PresentScreenTarget( void )
 	const gl_rendertarget_t *screen = &tr.targets.screen;
 
 	if( !GL_RenderTargetsActive( ))
+		return;
+
+	// the vignette reads the final composed screen and writes the window,
+	// so it always runs after the blur pass and never touches its state
+	if( GL_VignetteActive( ) && GL_VignetteDraw( screen ))
 		return;
 
 	if( GL_Support( GL_FRAMEBUFFER_BLIT_EXT ))
