@@ -86,12 +86,14 @@ typedef struct filter_locs_s
 	GLint vibrance;
 	GLint texel;
 	GLint sharpen_tex;
+	GLint bloom_tex;
+	GLint bloom_intensity;
 } filter_locs_t;
 
 qboolean GL_FilterActive( void );
 void GL_FilterFreePrograms( void );
 qboolean GL_FilterInitProgram( GLuint program, filter_locs_t *locs );
-void GL_FilterSetUniforms( const filter_locs_t *locs, int sharpenTexUnit, const gl_rendertarget_t *screen );
+void GL_FilterSetUniforms( const filter_locs_t *locs, int sharpenTexUnit, int bloomTexUnit, const gl_rendertarget_t *screen );
 qboolean GL_FilterScenePass( const gl_rendertarget_t *scene, const gl_rendertarget_t *screen );
 
 #endif // !XASH_GLES || !XASH_GL_STATIC

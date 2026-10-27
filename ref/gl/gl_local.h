@@ -203,6 +203,8 @@ typedef struct
 	gl_rendertarget_t screen; // 2D pass, sized like the window
 	gl_rendertarget_t blur;   // horizontal blur result, half of the window size
 	gl_rendertarget_t blur2;  // vertical blur result, half of the window size
+	gl_rendertarget_t bloom;  // bloom bright image, half of the window size
+	gl_rendertarget_t bloom2; // bloom horizontal blur result, half of the window size
 	qboolean failed;
 } gl_rendertargets_t;
 
@@ -386,6 +388,11 @@ void GL_VignetteFreePrograms( void );
 qboolean GL_FilterActive( void );
 qboolean GL_FilterScenePass( const gl_rendertarget_t *scene, const gl_rendertarget_t *screen );
 void GL_FilterFreePrograms( void );
+qboolean GL_BloomActive( void );
+qboolean GL_BloomBrightPass( const gl_rendertarget_t *dst, const gl_rendertarget_t *src );
+void GL_BloomFreePrograms( void );
+qboolean GL_BlurInitShaders( void );
+void GL_BlurShaderPass( const gl_rendertarget_t *dst, const gl_rendertarget_t *src, float dirx, float diry, float radius );
 #else
 static inline qboolean GL_BlurActive( void ) { return false; }
 static inline qboolean GL_ViewmodelAfterBlur( void ) { return false; }
@@ -399,6 +406,11 @@ static inline void GL_VignetteFreePrograms( void ) { }
 static inline qboolean GL_FilterActive( void ) { return false; }
 static inline qboolean GL_FilterScenePass( const gl_rendertarget_t *, const gl_rendertarget_t * ) { return false; }
 static inline void GL_FilterFreePrograms( void ) { }
+static inline qboolean GL_BloomActive( void ) { return false; }
+static inline qboolean GL_BloomBrightPass( const gl_rendertarget_t *, const gl_rendertarget_t * ) { return false; }
+static inline void GL_BloomFreePrograms( void ) { }
+static inline qboolean GL_BlurInitShaders( void ) { return false; }
+static inline void GL_BlurShaderPass( const gl_rendertarget_t *, const gl_rendertarget_t *, float, float, float ) { }
 #endif // !XASH_GLES || !XASH_GL_STATIC
 
 //
@@ -844,6 +856,10 @@ extern convar_t	gl_filters_hue;
 extern convar_t	gl_filters_hue_intensity;
 extern convar_t	gl_filters_temperature;
 extern convar_t	gl_filters_vibrance;
+extern convar_t	gl_bloom;
+extern convar_t	gl_bloom_intensity;
+extern convar_t	gl_bloom_threshold;
+extern convar_t	gl_bloom_radius;
 
 extern convar_t	r_lighting_ambient;
 extern convar_t	r_studio_lambert;

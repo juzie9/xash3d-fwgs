@@ -132,11 +132,14 @@ void GL_FreeRenderTargets( void )
 	GL_FreeRenderTarget( &tr.targets.scene );
 	GL_FreeRenderTarget( &tr.targets.blur );
 	GL_FreeRenderTarget( &tr.targets.blur2 );
+	GL_FreeRenderTarget( &tr.targets.bloom );
+	GL_FreeRenderTarget( &tr.targets.bloom2 );
 	GL_FreeRenderTarget( &tr.targets.screen );
 	glState.sceneTargetDrawn = false;
 	GL_BlurFreePrograms();
 	GL_VignetteFreePrograms();
 	GL_FilterFreePrograms();
+	GL_BloomFreePrograms();
 	GL_StudioFreeRainbowTexture();
 }
 
@@ -210,7 +213,8 @@ void GL_CheckRenderTargets( void )
 	qboolean blur = GL_BlurActive();
 	qboolean vignette = GL_VignetteActive();
 	qboolean filter = GL_FilterActive();
-	qboolean wanted = scale != 1.0f || blur || vignette || filter;
+	qboolean bloom = GL_BloomActive();
+	qboolean wanted = scale != 1.0f || blur || vignette || filter || bloom;
 
 	GL_GetWindowSize( &width, &height );
 
@@ -255,6 +259,7 @@ void GL_CheckRenderTargets( void )
 		&& tr.targets.screen.width == width && tr.targets.screen.height == height
 		&& tr.targets.msaa.samples == samples
 		&& blur == ( tr.targets.blur.fbo != 0 )
+		&& bloom == ( tr.targets.bloom.fbo != 0 )
 		&& ( tr.targets.scene.depthtex != 0 ) == ( blur && GL_BlurDofActive( ) && GL_Support( GL_DEPTH_TEXTURE )))
 	{
 		pglBindFramebuffer( GL_FRAMEBUFFER, tr.targets.screen.fbo );
@@ -293,6 +298,15 @@ void GL_CheckRenderTargets( void )
 		GL_FreeRenderTargets();
 		tr.targets.failed = true;
 		gEngfuncs.Con_Printf( S_ERROR "gl_blur: can't create %dx%d blur targets, rendering directly to the window\n", width / 2, height / 2 );
+		return;
+	}
+
+	if( bloom && ( !GL_CreateRenderTarget( &tr.targets.bloom, "*fbo_bloom", Q_max( 1, width / 2 ), Q_max( 1, height / 2 ), 0, RT_COLOR_TEXTURE )
+		|| !GL_CreateRenderTarget( &tr.targets.bloom2, "*fbo_bloom2", Q_max( 1, width / 2 ), Q_max( 1, height / 2 ), 0, RT_COLOR_TEXTURE )))
+	{
+		GL_FreeRenderTargets();
+		tr.targets.failed = true;
+		gEngfuncs.Con_Printf( S_ERROR "gl_bloom: can't create %dx%d bloom targets, rendering directly to the window\n", width / 2, height / 2 );
 		return;
 	}
 
@@ -436,15 +450,30 @@ void GL_BindScreenTarget( void )
 			pglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, 0, 0, tr.targets.scene.width, tr.targets.scene.height );
 		}
 
+		if( GL_BloomActive( ))
+		{
+			// extract the bright parts into the half resolution bloom
+			// target and blur them with the existing separable gaussian
+			const float radius = Q_max( 0.1f, gl_bloom_radius.value );
+
+			GL_BloomBrightPass( &tr.targets.bloom, &tr.targets.scene );
+
+			if( GL_BlurInitShaders( ))
+			{
+				GL_BlurShaderPass( &tr.targets.bloom2, &tr.targets.bloom, 1.0f, 0.0f, radius );
+				GL_BlurShaderPass( &tr.targets.bloom, &tr.targets.bloom2, 0.0f, 1.0f, radius );
+			}
+		}
+
 		if( tr.targets.blur.fbo && GL_BlurActive( ))
 		{
 			// two-pass separable gaussian blur: scene -> blur -> blur2 -> screen,
 			// the 2D stuff is drawn on top of the blurred scene afterwards
 			GL_BlurSceneTarget( &tr.targets.scene, &tr.targets.blur, &tr.targets.blur2, screen );
 		}
-		else if( GL_FilterActive( ) && GL_FilterScenePass( &tr.targets.scene, screen ))
+		else if(( GL_FilterActive( ) || GL_BloomActive( )) && GL_FilterScenePass( &tr.targets.scene, screen ))
 		{
-			// the filter chain applied to the plain scene copy
+			// the filter chain and the bloom add applied to the plain scene copy
 		}
 		else if( GL_Support( GL_FRAMEBUFFER_BLIT_EXT ))
 		{

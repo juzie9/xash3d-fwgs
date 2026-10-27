@@ -45,6 +45,10 @@ CVAR_DEFINE_AUTO( gl_filters_hue, "0", FCVAR_GLCONFIG, "hue shift in degrees (-1
 CVAR_DEFINE_AUTO( gl_filters_hue_intensity, "0", FCVAR_GLCONFIG, "hue shift intensity (0.0 to 1.0, 0 neutral)" );
 CVAR_DEFINE_AUTO( gl_filters_temperature, "0.02", FCVAR_GLCONFIG, "color temperature (-1.0 cool to 1.0 warm, 0 neutral)" );
 CVAR_DEFINE_AUTO( gl_filters_vibrance, "0.35", FCVAR_GLCONFIG, "vibrance (-1.0 to 1.0, 0 neutral)" );
+CVAR_DEFINE_AUTO( gl_bloom, "0", FCVAR_GLCONFIG, "enable the bloom post-processing effect (0/1)" );
+CVAR_DEFINE_AUTO( gl_bloom_intensity, "0.5", FCVAR_GLCONFIG, "bloom strength (0.0 to 2.0)" );
+CVAR_DEFINE_AUTO( gl_bloom_threshold, "0.8", FCVAR_GLCONFIG, "brightness threshold, pixels above it bloom (0.0 to 1.0)" );
+CVAR_DEFINE_AUTO( gl_bloom_radius, "8", FCVAR_GLCONFIG, "bloom blur radius in half resolution texels (0.1 and up)" );
 CVAR_DEFINE_AUTO( r_lighting_ambient, "0.3", FCVAR_GLCONFIG, "map ambient lighting scale" );
 CVAR_DEFINE_AUTO( r_detailtextures, "1", FCVAR_GLCONFIG, "enable detail textures support" );
 CVAR_DEFINE_AUTO( r_novis, "0", 0, "ignore vis information (perfomance test)" );
@@ -1295,6 +1299,10 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &gl_filters_hue_intensity );
 	gEngfuncs.Cvar_RegisterVariable( &gl_filters_temperature );
 	gEngfuncs.Cvar_RegisterVariable( &gl_filters_vibrance );
+	gEngfuncs.Cvar_RegisterVariable( &gl_bloom );
+	gEngfuncs.Cvar_RegisterVariable( &gl_bloom_intensity );
+	gEngfuncs.Cvar_RegisterVariable( &gl_bloom_threshold );
+	gEngfuncs.Cvar_RegisterVariable( &gl_bloom_radius );
 
 	gEngfuncs.Cvar_RegisterVariable( &gl_extensions );
 	gEngfuncs.Cvar_RegisterVariable( &gl_texture_nearest );

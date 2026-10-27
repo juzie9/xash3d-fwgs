@@ -15,6 +15,7 @@ GNU General Public License for more details.
 
 #include "gl_local.h"
 #include "gl_filter.h"
+#include "gl_bloom.h"
 
 #if !XASH_GLES || !XASH_GL_STATIC
 
@@ -36,6 +37,8 @@ static GLint	s_comp_loc_focus;
 static GLint	s_comp_loc_range;
 static GLint	s_comp_loc_darken;
 static GLint	s_comp_loc_contrast;
+static GLint	s_comp_loc_bloom_tex;
+static GLint	s_comp_loc_bloom_intensity;
 static filter_locs_t s_filter_locs;
 static qboolean	s_shaders_tried;
 
@@ -76,6 +79,7 @@ static const char *composite_fs =
 	"uniform float u_darken;\n"
 	"uniform float u_contrast;\n"
 	FILTER_GLSL_UNIFORMS
+	BLOOM_GLSL_UNIFORMS
 	FILTER_GLSL_MAIN
 	"void main( void )\n"
 	"{\n"
@@ -94,6 +98,7 @@ static const char *composite_fs =
 	"	color *= 1.0 - u_darken * amount;\n"
 	"	color = ( color - 0.5 ) * ( 1.0 + u_contrast ) + 0.5;\n"
 	"	color = XashFilter( color, uv );\n"
+	BLOOM_GLSL_ADD
 	"	gl_FragColor = vec4( color, 1.0 );\n"
 	"}\n";
 
@@ -167,7 +172,7 @@ lazily compiles the blur and composite programs, falls back
 to the fixed-function blur when GLSL is unavailable
 ================
 */
-static qboolean GL_BlurInitShaders( void )
+qboolean GL_BlurInitShaders( void )
 {
 	if( s_shaders_tried )
 		return s_blur_program && s_composite_program;
@@ -202,6 +207,8 @@ static qboolean GL_BlurInitShaders( void )
 		s_comp_loc_range = pglGetUniformLocationARB( s_composite_program, "u_range" );
 		s_comp_loc_darken = pglGetUniformLocationARB( s_composite_program, "u_darken" );
 		s_comp_loc_contrast = pglGetUniformLocationARB( s_composite_program, "u_contrast" );
+		s_comp_loc_bloom_tex = pglGetUniformLocationARB( s_composite_program, "u_bloom_tex" );
+		s_comp_loc_bloom_intensity = pglGetUniformLocationARB( s_composite_program, "u_bloom_intensity" );
 		GL_FilterInitProgram( s_composite_program, &s_filter_locs );
 	}
 
@@ -348,7 +355,7 @@ separable gaussian blur in a fragment shader: samples are taken
 at every texel, so the result stays smooth at any radius
 ================
 */
-static void GL_BlurShaderPass( const gl_rendertarget_t *dst, const gl_rendertarget_t *src, float dirx, float diry, float radius )
+void GL_BlurShaderPass( const gl_rendertarget_t *dst, const gl_rendertarget_t *src, float dirx, float diry, float radius )
 {
 	float weights[BLUR_TAPS];
 
@@ -424,6 +431,11 @@ static void GL_BlurCompositePass( const gl_rendertarget_t *scene, const gl_rende
 		GL_Bind( XASH_TEXTURE2, tr.defaultTexture );
 	}
 
+	if( GL_BloomActive( ) && tr.targets.bloom.texnum )
+		GL_Bind( XASH_TEXTURE3, tr.targets.bloom.texnum );
+	else
+		GL_Bind( XASH_TEXTURE3, tr.defaultTexture );
+
 	// linearize depth with the projection of the main view:
 	// row-major matrix, so use [row][column] indexing
 	nearclip = RI.projectionMatrix[2][3] / ( RI.projectionMatrix[2][2] - 1.0f );
@@ -439,13 +451,15 @@ static void GL_BlurCompositePass( const gl_rendertarget_t *scene, const gl_rende
 	pglUniform1iARB( s_comp_loc_sharp, 0 );
 	pglUniform1iARB( s_comp_loc_blur, 1 );
 	pglUniform1iARB( s_comp_loc_depth, 2 );
+	pglUniform1iARB( s_comp_loc_bloom_tex, 3 );
+	pglUniform1fARB( s_comp_loc_bloom_intensity, GL_BloomActive( ) ? bound( 0.0f, gl_bloom_intensity.value, 2.0f ) : 0.0f );
 	pglUniform1fARB( s_comp_loc_near, nearclip );
 	pglUniform1fARB( s_comp_loc_far, farclip );
 	pglUniform1fARB( s_comp_loc_focus, gl_blur_focus.value );
 	pglUniform1fARB( s_comp_loc_range, Q_max( 1.0f, gl_blur_focus_range.value ));
 	pglUniform1fARB( s_comp_loc_darken, bound( 0.0f, gl_blur_darken.value, 1.0f ));
 	pglUniform1fARB( s_comp_loc_contrast, bound( -0.5f, gl_blur_contrast.value, 1.0f ));
-	GL_FilterSetUniforms( &s_filter_locs, 0, scene );
+	GL_FilterSetUniforms( &s_filter_locs, 0, 3, scene );
 
 	GL_BlurDrawQuad( screen );
 
