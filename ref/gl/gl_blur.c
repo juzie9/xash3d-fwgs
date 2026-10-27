@@ -443,10 +443,12 @@ static void GL_BlurCompositePass( const gl_rendertarget_t *scene, const gl_rende
 	else
 		GL_Bind( XASH_TEXTURE3, tr.defaultTexture );
 
+	// the SSAO factor uses the fifth texture unit, which is beyond the
+	// named engine texture units: GLSL capable hardware always has more
 	if( GL_SsaoActive( ) && tr.targets.ssao.texnum )
-		GL_Bind( XASH_TEXTURE4, tr.targets.ssao.texnum );
+		GL_Bind( 4, tr.targets.ssao.texnum );
 	else
-		GL_Bind( XASH_TEXTURE4, tr.defaultTexture );
+		GL_Bind( 4, tr.defaultTexture );
 
 	// linearize depth with the projection of the main view:
 	// row-major matrix, so use [row][column] indexing
