@@ -87,6 +87,11 @@ Studio models are position independent, so the cache manager can move them.
 #define STUDIO_NF_UV_SCROLL_LEFT	0x4000	// scroll texture UVs to the left
 #define STUDIO_NF_UV_SCROLL_RIGHT	0x8000	// scroll texture UVs to the right
 
+// rainbow color flow along the texture U axis: the two flags pick the
+// direction, the flow itself is a separate effect from the UV scroll
+#define STUDIO_NF_RAINBOW_FLOW			(1U<<22)	// rainbow flow in the forward U direction
+#define STUDIO_NF_RAINBOW_FLOW_REVERSE	(1U<<23)	// rainbow flow in the reverse U direction
+
 #define STUDIO_NF_NODRAW		(1U<<16)	// failed to create shader for this mesh
 #define STUDIO_NF_NODLIGHT		(1U<<17)	// failed to create dlight shader for this mesh
 #define STUDIO_NF_NOSUNLIGHT		(1U<<18)	// failed to create sun light shader for this mesh

@@ -137,6 +137,7 @@ void GL_FreeRenderTargets( void )
 	GL_BlurFreePrograms();
 	GL_VignetteFreePrograms();
 	GL_FilterFreePrograms();
+	GL_StudioFreeRainbowTexture();
 }
 
 static int GL_SceneTargetSamples( void )

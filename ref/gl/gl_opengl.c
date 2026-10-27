@@ -1258,6 +1258,12 @@ static void GL_InitCommands( void )
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_drawelements );
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_builtin_renderer );
 	gEngfuncs.Cvar_RegisterVariable( &r_studio_uv_scroll_speed );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_rainbow_flow );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_rainbow_flow_speed );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_rainbow_flow_scale );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_rainbow_flow_brightness );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_rainbow_flow_saturation );
+	gEngfuncs.Cvar_RegisterVariable( &r_studio_rainbow_flow_intensity );
 	gEngfuncs.Cvar_RegisterVariable( &r_ripple );
 	gEngfuncs.Cvar_RegisterVariable( &r_ripple_updatetime );
 	gEngfuncs.Cvar_RegisterVariable( &r_ripple_spawntime );

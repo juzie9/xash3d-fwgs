@@ -172,6 +172,19 @@ void R_Set2DMode( qboolean enable )
 		GL_SelectTexture( XASH_TEXTURE0 );
 		GL_LoadIdentityTexMatrix();
 
+		// the rainbow flow uses the second texture unit: disable it for 2D
+		// so the HUD can't be combined with a leftover rainbow texture
+		GL_SelectTexture( XASH_TEXTURE1 );
+		if( glState.currentTextureTargets[1] != GL_NONE )
+		{
+			pglDisable( glState.currentTextureTargets[1] );
+			glState.currentTextureTargets[1] = GL_NONE;
+			glState.currentTextures[1] = -1;
+			glState.currentTexturesIndex[1] = 0;
+		}
+		GL_LoadIdentityTexMatrix();
+		GL_SelectTexture( XASH_TEXTURE0 );
+
 		pglDepthMask( GL_FALSE );
 		pglDisable( GL_DEPTH_TEST );
 		pglEnable( GL_ALPHA_TEST );

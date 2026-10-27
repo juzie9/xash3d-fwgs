@@ -124,6 +124,12 @@ CVAR_DEFINE_AUTO( r_studio_sort_textures, "0", FCVAR_GLCONFIG, "change draw orde
 CVAR_DEFINE_AUTO( r_studio_drawelements, "1", FCVAR_GLCONFIG, "use glDrawElements for studiomodels" );
 CVAR_DEFINE_AUTO( r_studio_builtin_renderer, "0", 0, "use built-in studio model renderer instead of the one provided by client library (debugging)" );
 CVAR_DEFINE_AUTO( r_studio_uv_scroll_speed, "0.1", FCVAR_GLCONFIG, "studio texture UV scroll speed in texture units per second" );
+CVAR_DEFINE_AUTO( r_studio_rainbow_flow, "1", FCVAR_GLCONFIG, "enable the studio rainbow flow effect (0/1)" );
+CVAR_DEFINE_AUTO( r_studio_rainbow_flow_speed, "1.0", FCVAR_GLCONFIG, "rainbow flow speed, direction comes from the material flags (0.0 and up)" );
+CVAR_DEFINE_AUTO( r_studio_rainbow_flow_scale, "1.0", FCVAR_GLCONFIG, "rainbow gradient density along the surface (0.01 and up, sign is ignored)" );
+CVAR_DEFINE_AUTO( r_studio_rainbow_flow_brightness, "1.0", FCVAR_GLCONFIG, "rainbow color brightness (0.0 to 2.0)" );
+CVAR_DEFINE_AUTO( r_studio_rainbow_flow_saturation, "1.0", FCVAR_GLCONFIG, "rainbow color saturation (0.0 to 2.0)" );
+CVAR_DEFINE_AUTO( r_studio_rainbow_flow_intensity, "1.0", FCVAR_GLCONFIG, "overall rainbow strength multiplier (0.0 to 2.0)" );
 static cvar_t			*cl_righthand = NULL;
 
 static r_studio_interface_t	*pStudioDraw;
@@ -1472,6 +1478,8 @@ static void R_LightStrength( int bone, vec3_t localpos, vec4_t light[MAX_LOCALLI
 }
 
 static void R_StudioSetupUVScroll( int flags );
+static void R_StudioSetupRainbow( int flags );
+static void R_StudioRainbowCleanup( void );
 
 /*
 ===============
@@ -1484,7 +1492,12 @@ static void R_StudioSetupSkin( studiohdr_t *ptexturehdr, int index )
 	mstudiotexture_t	*ptexture = NULL;
 
 	if( FBitSet( g_nForceFaceFlags, STUDIO_NF_CHROME ))
+	{
+		// the chrome shader owns its texture units: make sure the
+		// rainbow state of the previous mesh can't leak into it
+		R_StudioRainbowCleanup();
 		return;
+	}
 
 	if( ptexturehdr == NULL )
 		return;
@@ -1493,13 +1506,17 @@ static void R_StudioSetupSkin( studiohdr_t *ptexturehdr, int index )
 	if( m_fDoRemap ) ptexture = gEngfuncs.CL_GetRemapInfoForEntity( RI.currententity )->ptexture;
 	if( !ptexture ) ptexture = (mstudiotexture_t *)((byte *)ptexturehdr + ptexturehdr->textureindex); // fallback
 
+	// the rainbow setup runs first: recreating the gradient texture uses
+	// a raw bind on the active unit, the mesh texture is bound right after
 	if( r_lightmap->value && !r_fullbright->value )
 	{
+		R_StudioSetupRainbow( 0 );
 		GL_Bind( XASH_TEXTURE0, tr.whiteTexture );
 		R_StudioSetupUVScroll( 0 );
 	}
 	else
 	{
+		R_StudioSetupRainbow( ptexture[index].flags );
 		GL_Bind( XASH_TEXTURE0, ptexture[index].index );
 		R_StudioSetupUVScroll( ptexture[index].flags );
 	}
@@ -1536,6 +1553,204 @@ static void R_StudioSetupUVScroll( int flags )
 	GL_LoadTexMatrixExt( glmatrix );
 	pglMatrixMode( GL_MODELVIEW );
 }
+
+#if !XASH_GLES
+
+/*
+================
+R_StudioSetupRainbow
+
+replaces the surface color with the flowing rainbow gradient through the
+texture combiners of the second texture unit: it is fully independent
+from the TMU0 texture matrix used by the UV scroll, so both effects run
+at the same time and each one keeps its own direction. The rainbow
+gradient is anchored to the texture U axis of the mesh, the flow offset
+is time-based. The original texture keeps supplying the alpha channel,
+so masked and additive materials behave as expected.
+================
+*/
+
+#define STUDIO_RAINBOW_SIZE 256
+
+static GLuint s_rainbow_texnum;
+static float s_rainbow_brightness = -1.0f;
+static float s_rainbow_saturation = -1.0f;
+
+static void R_StudioHSVToRGB( float h, float s, float v, float rgb[3] )
+{
+	int i = ( int )( h * 6.0f );
+	float f = h * 6.0f - i;
+	float p = v * ( 1.0f - s );
+	float q = v * ( 1.0f - f * s );
+	float t = v * ( 1.0f - ( 1.0f - f ) * s );
+
+	switch( i % 6 )
+	{
+	case 0: rgb[0] = v; rgb[1] = t; rgb[2] = p; break;
+	case 1: rgb[0] = q; rgb[1] = v; rgb[2] = p; break;
+	case 2: rgb[0] = p; rgb[1] = v; rgb[2] = t; break;
+	case 3: rgb[0] = p; rgb[1] = q; rgb[2] = v; break;
+	case 4: rgb[0] = t; rgb[1] = p; rgb[2] = v; break;
+	default: rgb[0] = v; rgb[1] = p; rgb[2] = q; break;
+	}
+}
+
+static void R_StudioCreateRainbowTexture( void )
+{
+	byte texels[STUDIO_RAINBOW_SIZE * 4];
+	float sat, bright;
+	int i;
+
+	sat = bound( 0.0f, r_studio_rainbow_flow_saturation.value, 2.0f );
+	bright = bound( 0.0f, r_studio_rainbow_flow_brightness.value, 2.0f );
+
+	// bake the parameters into the tiny gradient texture: it is rebuilt
+	// only when the cvar values change, never per frame
+	for( i = 0; i < STUDIO_RAINBOW_SIZE; i++ )
+	{
+		float rgb[3], h;
+
+		h = ( float )i / ( float )( STUDIO_RAINBOW_SIZE - 1 );
+		R_StudioHSVToRGB( h, sat, bright, rgb );
+
+		// a texture can't store values above 1.0: clamp before converting
+		texels[i*4+0] = ( byte )( Q_min( 1.0f, Q_max( 0.0f, rgb[0] )) * 255.0f );
+		texels[i*4+1] = ( byte )( Q_min( 1.0f, Q_max( 0.0f, rgb[1] )) * 255.0f );
+		texels[i*4+2] = ( byte )( Q_min( 1.0f, Q_max( 0.0f, rgb[2] )) * 255.0f );
+		texels[i*4+3] = 255;
+	}
+
+	if( !s_rainbow_texnum )
+		pglGenTextures( 1, &s_rainbow_texnum );
+
+	// the raw bind invalidates the cache, the caller rebinds the mesh
+	// texture on unit 0 afterwards
+	pglBindTexture( GL_TEXTURE_2D, s_rainbow_texnum );
+	glState.currentTextures[glState.activeTMU] = 0;
+	glState.currentTexturesIndex[glState.activeTMU] = 0;
+
+	pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+	pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
+	pglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+
+	pglTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA, STUDIO_RAINBOW_SIZE, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, texels );
+
+	s_rainbow_brightness = bright;
+	s_rainbow_saturation = sat;
+}
+
+static qboolean R_StudioRainbowActive( int flags )
+{
+	return r_studio_rainbow_flow.value != 0.0f
+		&& ( FBitSet( flags, STUDIO_NF_RAINBOW_FLOW ) || FBitSet( flags, STUDIO_NF_RAINBOW_FLOW_REVERSE ));
+}
+
+void GL_StudioFreeRainbowTexture( void )
+{
+	if( s_rainbow_texnum )
+	{
+		pglDeleteTextures( 1, &s_rainbow_texnum );
+		s_rainbow_texnum = 0;
+		s_rainbow_brightness = -1.0f;
+		s_rainbow_saturation = -1.0f;
+	}
+}
+
+static void R_StudioRainbowCleanup( void )
+{
+	// no rainbow on this mesh: undo any state the previous mesh left,
+	// keeping the texture unit cache consistent like GL_CleanUpTextureUnits
+	GL_SelectTexture( XASH_TEXTURE1 );
+
+	if( glState.currentTextureTargets[1] != GL_NONE )
+	{
+		pglDisable( glState.currentTextureTargets[1] );
+		glState.currentTextureTargets[1] = GL_NONE;
+		glState.currentTextures[1] = -1;
+		glState.currentTexturesIndex[1] = 0;
+	}
+
+	GL_LoadIdentityTexMatrix();
+	GL_SelectTexture( XASH_TEXTURE0 );
+}
+
+static void R_StudioSetupRainbow( int flags )
+{
+	if( !R_StudioRainbowActive( flags ))
+	{
+		R_StudioRainbowCleanup();
+		return;
+	}
+
+	// runs while unit 0 is still active: recreated only when the
+	// brightness or saturation parameters change
+	if( !s_rainbow_texnum
+		|| s_rainbow_brightness != bound( 0.0f, r_studio_rainbow_flow_brightness.value, 2.0f )
+		|| s_rainbow_saturation != bound( 0.0f, r_studio_rainbow_flow_saturation.value, 2.0f ))
+		R_StudioCreateRainbowTexture();
+
+	{
+		matrix4x4 m;
+		GLfloat glmatrix[16];
+		GLfloat blend[4];
+		float offs;
+
+		GL_SelectTexture( XASH_TEXTURE1 );
+
+		// the rainbow gradient is a raw GL texture name, not an entry in
+		// the texture registry: bind it directly and keep the unit cache
+		// consistent, GL_Bind would misinterpret the name as a registry index
+		pglBindTexture( GL_TEXTURE_2D, s_rainbow_texnum );
+		glState.currentTextureTargets[1] = GL_TEXTURE_2D;
+		glState.currentTextures[1] = 0;
+		glState.currentTexturesIndex[1] = 0;
+		pglEnable( GL_TEXTURE_2D );
+
+		// the rainbow color replaces the surface color outright, scaled by
+		// the intensity parameter: the original texture only keeps its
+		// alpha, so MASKED materials keep their shape and ADDITIVE
+		// materials keep their blending behavior
+		pglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE_ARB );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_MODULATE );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_RGB_ARB, GL_TEXTURE );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE1_RGB_ARB, GL_CONSTANT_ARB );
+
+		// keep the original texture alpha for the alpha test
+		pglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_ALPHA_ARB, GL_REPLACE );
+		pglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_ALPHA_ARB, GL_PREVIOUS_ARB );
+
+		blend[0] = blend[1] = blend[2] = bound( 0.0f, r_studio_rainbow_flow_intensity.value, 2.0f );
+		blend[3] = 1.0f;
+		pglTexEnvfv( GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, blend );
+
+		// forward flow moves the gradient towards larger U: shifting the
+		// sampling towards smaller U makes the pattern appear to move the
+		// other way. The reverse flag flips the sign and when both flags
+		// are set the forward flag wins (predictable precedence rule)
+		offs = g_studio.time * Q_max( 0.0f, r_studio_rainbow_flow_speed.value );
+
+		if( FBitSet( flags, STUDIO_NF_RAINBOW_FLOW_REVERSE )
+			&& !FBitSet( flags, STUDIO_NF_RAINBOW_FLOW ))
+			offs = -offs;
+
+		Matrix4x4_LoadIdentity( m );
+		m[0][0] = Q_max( 0.01f, fabsf( r_studio_rainbow_flow_scale.value ));
+		m[0][3] = -offs;
+
+		Matrix4x4_ToArrayFloatGL( m, glmatrix );
+		GL_LoadTexMatrixExt( glmatrix );
+		pglMatrixMode( GL_MODELVIEW );
+
+		GL_SelectTexture( XASH_TEXTURE0 );
+	}
+}
+
+#else
+static void R_StudioSetupRainbow( int flags ) { ( void )flags; }
+static void R_StudioRainbowCleanup( void ) { }
+void GL_StudioFreeRainbowTexture( void ) { }
+#endif // !XASH_GLES
 
 /*
 ===============
