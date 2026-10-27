@@ -205,6 +205,8 @@ typedef struct
 	gl_rendertarget_t blur2;  // vertical blur result, half of the window size
 	gl_rendertarget_t bloom;  // bloom bright image, half of the window size
 	gl_rendertarget_t bloom2; // bloom horizontal blur result, half of the window size
+	gl_rendertarget_t ssao;   // ambient occlusion factor, half of the window size
+	gl_rendertarget_t ssao2;  // ssao horizontal blur result, half of the window size
 	qboolean failed;
 } gl_rendertargets_t;
 
@@ -393,6 +395,9 @@ qboolean GL_BloomBrightPass( const gl_rendertarget_t *dst, const gl_rendertarget
 void GL_BloomFreePrograms( void );
 qboolean GL_BlurInitShaders( void );
 void GL_BlurShaderPass( const gl_rendertarget_t *dst, const gl_rendertarget_t *src, float dirx, float diry, float radius );
+qboolean GL_SsaoActive( void );
+qboolean GL_SsaoPass( const gl_rendertarget_t *dst, const gl_rendertarget_t *scene );
+void GL_SsaoFreePrograms( void );
 #else
 static inline qboolean GL_BlurActive( void ) { return false; }
 static inline qboolean GL_ViewmodelAfterBlur( void ) { return false; }
@@ -411,6 +416,9 @@ static inline qboolean GL_BloomBrightPass( const gl_rendertarget_t *, const gl_r
 static inline void GL_BloomFreePrograms( void ) { }
 static inline qboolean GL_BlurInitShaders( void ) { return false; }
 static inline void GL_BlurShaderPass( const gl_rendertarget_t *, const gl_rendertarget_t *, float, float, float ) { }
+static inline qboolean GL_SsaoActive( void ) { return false; }
+static inline qboolean GL_SsaoPass( const gl_rendertarget_t *, const gl_rendertarget_t * ) { return false; }
+static inline void GL_SsaoFreePrograms( void ) { }
 #endif // !XASH_GLES || !XASH_GL_STATIC
 
 //
@@ -860,6 +868,10 @@ extern convar_t	gl_bloom;
 extern convar_t	gl_bloom_intensity;
 extern convar_t	gl_bloom_threshold;
 extern convar_t	gl_bloom_radius;
+extern convar_t	gl_ssao;
+extern convar_t	gl_ssao_strength;
+extern convar_t	gl_ssao_radius;
+extern convar_t	gl_ssao_bias;
 
 extern convar_t	r_lighting_ambient;
 extern convar_t	r_studio_lambert;

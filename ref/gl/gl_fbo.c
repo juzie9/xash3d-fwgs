@@ -134,12 +134,15 @@ void GL_FreeRenderTargets( void )
 	GL_FreeRenderTarget( &tr.targets.blur2 );
 	GL_FreeRenderTarget( &tr.targets.bloom );
 	GL_FreeRenderTarget( &tr.targets.bloom2 );
+	GL_FreeRenderTarget( &tr.targets.ssao );
+	GL_FreeRenderTarget( &tr.targets.ssao2 );
 	GL_FreeRenderTarget( &tr.targets.screen );
 	glState.sceneTargetDrawn = false;
 	GL_BlurFreePrograms();
 	GL_VignetteFreePrograms();
 	GL_FilterFreePrograms();
 	GL_BloomFreePrograms();
+	GL_SsaoFreePrograms();
 	GL_StudioFreeRainbowTexture();
 }
 
@@ -214,7 +217,8 @@ void GL_CheckRenderTargets( void )
 	qboolean vignette = GL_VignetteActive();
 	qboolean filter = GL_FilterActive();
 	qboolean bloom = GL_BloomActive();
-	qboolean wanted = scale != 1.0f || blur || vignette || filter || bloom;
+	qboolean ssao = GL_SsaoActive();
+	qboolean wanted = scale != 1.0f || blur || vignette || filter || bloom || ssao;
 
 	GL_GetWindowSize( &width, &height );
 
@@ -260,7 +264,8 @@ void GL_CheckRenderTargets( void )
 		&& tr.targets.msaa.samples == samples
 		&& blur == ( tr.targets.blur.fbo != 0 )
 		&& bloom == ( tr.targets.bloom.fbo != 0 )
-		&& ( tr.targets.scene.depthtex != 0 ) == ( blur && GL_BlurDofActive( ) && GL_Support( GL_DEPTH_TEXTURE )))
+		&& ssao == ( tr.targets.ssao.fbo != 0 )
+		&& ( tr.targets.scene.depthtex != 0 ) == ((( blur && GL_BlurDofActive( )) || GL_SsaoActive( )) && GL_Support( GL_DEPTH_TEXTURE )))
 	{
 		pglBindFramebuffer( GL_FRAMEBUFFER, tr.targets.screen.fbo );
 		glState.sceneTargetDrawn = false;
@@ -310,7 +315,16 @@ void GL_CheckRenderTargets( void )
 		return;
 	}
 
-	if( blur && GL_BlurDofActive( ) && GL_Support( GL_DEPTH_TEXTURE ))
+	if( ssao && ( !GL_CreateRenderTarget( &tr.targets.ssao, "*fbo_ssao", Q_max( 1, width / 2 ), Q_max( 1, height / 2 ), 0, RT_COLOR_TEXTURE )
+		|| !GL_CreateRenderTarget( &tr.targets.ssao2, "*fbo_ssao2", Q_max( 1, width / 2 ), Q_max( 1, height / 2 ), 0, RT_COLOR_TEXTURE )))
+	{
+		GL_FreeRenderTargets();
+		tr.targets.failed = true;
+		gEngfuncs.Con_Printf( S_ERROR "gl_ssao: can't create %dx%d ssao targets, rendering directly to the window\n", width / 2, height / 2 );
+		return;
+	}
+
+	if((( blur && GL_BlurDofActive( )) || GL_SsaoActive( )) && GL_Support( GL_DEPTH_TEXTURE ))
 	{
 		pglGenTextures( 1, &tr.targets.scene.depthtex );
 		pglBindTexture( GL_TEXTURE_2D, tr.targets.scene.depthtex );
@@ -437,8 +451,8 @@ void GL_BindScreenTarget( void )
 		if( tr.targets.msaa.fbo )
 			GL_BlitTarget( &tr.targets.msaa, tr.targets.scene.fbo, tr.targets.scene.width, tr.targets.scene.height, GL_NEAREST );
 
-		// copy the scene depth for the depth of field blur
-		if( tr.targets.scene.depthtex && GL_BlurDofActive( ))
+		// copy the scene depth for the depth of field blur and the SSAO
+		if( tr.targets.scene.depthtex && ( GL_BlurDofActive( ) || GL_SsaoActive( )))
 		{
 			pglBindFramebuffer( GL_READ_FRAMEBUFFER, tr.targets.msaa.fbo ? tr.targets.msaa.fbo : tr.targets.scene.fbo );
 			// depthtex is a raw GL texture name: bind it directly and
@@ -448,6 +462,19 @@ void GL_BindScreenTarget( void )
 			glState.currentTextures[0] = 0;
 			glState.currentTexturesIndex[0] = 0;
 			pglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, 0, 0, tr.targets.scene.width, tr.targets.scene.height );
+		}
+
+		if( GL_SsaoActive( ))
+		{
+			// compute the occlusion factor at half resolution from the
+			// scene depth and blur it with the existing gaussian
+			GL_SsaoPass( &tr.targets.ssao, &tr.targets.scene );
+
+			if( GL_BlurInitShaders( ))
+			{
+				GL_BlurShaderPass( &tr.targets.ssao2, &tr.targets.ssao, 1.0f, 0.0f, 2.0f );
+				GL_BlurShaderPass( &tr.targets.ssao, &tr.targets.ssao2, 0.0f, 1.0f, 2.0f );
+			}
 		}
 
 		if( GL_BloomActive( ))
@@ -471,9 +498,10 @@ void GL_BindScreenTarget( void )
 			// the 2D stuff is drawn on top of the blurred scene afterwards
 			GL_BlurSceneTarget( &tr.targets.scene, &tr.targets.blur, &tr.targets.blur2, screen );
 		}
-		else if(( GL_FilterActive( ) || GL_BloomActive( )) && GL_FilterScenePass( &tr.targets.scene, screen ))
+		else if(( GL_FilterActive( ) || GL_BloomActive( ) || GL_SsaoActive( )) && GL_FilterScenePass( &tr.targets.scene, screen ))
 		{
-			// the filter chain and the bloom add applied to the plain scene copy
+			// the filter chain, the SSAO darkening and the bloom add
+			// applied to the plain scene copy
 		}
 		else if( GL_Support( GL_FRAMEBUFFER_BLIT_EXT ))
 		{

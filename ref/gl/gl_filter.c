@@ -14,6 +14,7 @@ GNU General Public License for more details.
 */
 #include "gl_filter.h"
 #include "gl_bloom.h"
+#include "gl_ssao.h"
 
 #if !XASH_GLES || !XASH_GL_STATIC
 
@@ -33,12 +34,14 @@ static const char *filter_fs =
 	"uniform sampler2D u_tex;\n"
 	FILTER_GLSL_UNIFORMS
 	BLOOM_GLSL_UNIFORMS
+	SSAO_GLSL_UNIFORMS
 	FILTER_GLSL_MAIN
 	"void main( void )\n"
 	"{\n"
 	"	vec2 uv = gl_TexCoord[0].xy;\n"
 	"	vec3 color = texture2D( u_tex, uv ).rgb;\n"
 	"	color = XashFilter( color, uv );\n"
+	SSAO_GLSL_ADD
 	BLOOM_GLSL_ADD
 	"	gl_FragColor = vec4( color, 1.0 );\n"
 	"}\n";
@@ -163,12 +166,15 @@ qboolean GL_FilterInitProgram( GLuint program, filter_locs_t *locs )
 	locs->sharpen_tex = pglGetUniformLocationARB( program, "u_flt_sharpen_tex" );
 	locs->bloom_tex = pglGetUniformLocationARB( program, "u_bloom_tex" );
 	locs->bloom_intensity = pglGetUniformLocationARB( program, "u_bloom_intensity" );
+	locs->ssao_tex = pglGetUniformLocationARB( program, "u_ssao_tex" );
+	locs->ssao_strength = pglGetUniformLocationARB( program, "u_ssao_strength" );
 
 	return locs->sharpen != -1 && locs->exposure != -1 && locs->contrast != -1
 		&& locs->highlights != -1 && locs->shadows != -1 && locs->grayscale != -1
 		&& locs->hue != -1 && locs->hue_intensity != -1 && locs->temperature != -1
 		&& locs->vibrance != -1 && locs->texel != -1 && locs->sharpen_tex != -1
-		&& locs->bloom_tex != -1 && locs->bloom_intensity != -1;
+		&& locs->bloom_tex != -1 && locs->bloom_intensity != -1
+		&& locs->ssao_tex != -1 && locs->ssao_strength != -1;
 }
 
 /*
@@ -179,7 +185,7 @@ uploads the current CVar values, the texel size is taken from the
 source texture so the sharpen kernel works at any resolution
 ================
 */
-void GL_FilterSetUniforms( const filter_locs_t *locs, int sharpenTexUnit, int bloomTexUnit, const gl_rendertarget_t *screen )
+void GL_FilterSetUniforms( const filter_locs_t *locs, int sharpenTexUnit, int bloomTexUnit, int ssaoTexUnit, const gl_rendertarget_t *screen )
 {
 	pglUniform1fARB( locs->sharpen, bound( 0.0f, gl_filters_sharpen.value, 2.0f ));
 	pglUniform1fARB( locs->exposure, bound( 0.5f, gl_filters_exposure.value, 2.0f ));
@@ -195,6 +201,8 @@ void GL_FilterSetUniforms( const filter_locs_t *locs, int sharpenTexUnit, int bl
 	pglUniform1iARB( locs->sharpen_tex, sharpenTexUnit );
 	pglUniform1iARB( locs->bloom_tex, bloomTexUnit );
 	pglUniform1fARB( locs->bloom_intensity, GL_BloomActive( ) ? bound( 0.0f, gl_bloom_intensity.value, 2.0f ) : 0.0f );
+	pglUniform1iARB( locs->ssao_tex, ssaoTexUnit );
+	pglUniform1fARB( locs->ssao_strength, GL_SsaoActive( ) ? bound( 0.0f, gl_ssao_strength.value, 2.0f ) : 0.0f );
 }
 
 static void GL_FilterDrawQuad( const gl_rendertarget_t *dst )
@@ -280,9 +288,15 @@ qboolean GL_FilterScenePass( const gl_rendertarget_t *scene, const gl_rendertarg
 	else
 		GL_Bind( XASH_TEXTURE1, tr.defaultTexture );
 
+	// the ambient occlusion darkens the filtered scene
+	if( GL_SsaoActive( ) && tr.targets.ssao.texnum )
+		GL_Bind( XASH_TEXTURE2, tr.targets.ssao.texnum );
+	else
+		GL_Bind( XASH_TEXTURE2, tr.defaultTexture );
+
 	pglUseProgramObjectARB( s_program );
 	pglUniform1iARB( s_loc_tex, 0 );
-	GL_FilterSetUniforms( &s_locs, 0, 1, scene );
+	GL_FilterSetUniforms( &s_locs, 0, 1, 2, scene );
 
 	GL_FilterDrawQuad( screen );
 
