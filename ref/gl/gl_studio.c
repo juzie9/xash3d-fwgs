@@ -145,6 +145,28 @@ static float m_flGaitMovement;
 static int g_nTopColor, g_nBottomColor;	// remap colors
 static int g_nFaceFlags, g_nForceFaceFlags;
 
+// animated texture runtime data: one immutable table per model, keyed by the
+// studio header pointer (mod->cache.data); the payload lives in the model's
+// own mempool and dies with it
+typedef struct
+{
+	int		framerate;
+	int		numframes;
+	int		frame_texidx[MAXSTUDIOANIMFRAMES];	// frame -> texture table entry
+} studio_animtex_t;
+
+typedef struct
+{
+	model_t			*mod;		// owning model (stable across T.mdl merges)
+	studiohdr_t		*phdr;		// model key (mod->cache.data)
+	studio_animtex_t	*anims;		// slot-indexed array, phdr->numtextures entries
+} studio_animtex_model_t;
+
+#define MAX_STUDIO_ANIMTEX_MODELS	512
+
+static studio_animtex_model_t	s_animtex_models[MAX_STUDIO_ANIMTEX_MODELS];
+static studio_animtex_model_t	*s_last_animtex = NULL;	// last-hit cache
+
 /*
 ====================
 R_StudioInit
@@ -1482,6 +1504,189 @@ static void R_StudioSetupRainbow( int flags );
 static void R_StudioRainbowCleanup( void );
 
 /*
+===================
+R_StudioAnimTexFrame
+
+Return the texture table entry to bind for the given mesh texture index,
+following the model's animated texture frame table. The frame is derived
+from the absolute time, so playback is stateless, looped and unaffected by
+the render rate.
+===================
+*/
+static int R_StudioAnimTexFrame( studiohdr_t *phdr, int index )
+{
+	studio_animtex_model_t	*entry = s_last_animtex;
+	int		i;
+
+	if( !entry || entry->phdr != phdr )
+	{
+		entry = NULL;
+
+		for( i = 0; i < MAX_STUDIO_ANIMTEX_MODELS; i++ )
+		{
+			if( s_animtex_models[i].phdr == phdr )
+			{
+				entry = &s_animtex_models[i];
+				break;
+			}
+		}
+
+		s_last_animtex = entry;
+	}
+
+	if( !entry || !entry->anims )
+		return index;
+
+	const studio_animtex_t *anim = &entry->anims[index];
+
+	if( anim->numframes <= 0 )
+		return index;
+
+	double f = fmod( g_studio.time * (double)anim->framerate, (double)anim->numframes );
+	int frame = (int)f;
+
+	if( frame < 0 )
+		frame += anim->numframes; // guard against negative time
+
+	return anim->frame_texidx[frame];
+}
+
+/*
+===================
+R_StudioLoadAnimatedTextures
+
+Parse and validate the animated texture extension block and build the
+model-level immutable frame table. Malformed entries degrade to static
+textures with a warning; the model itself keeps loading.
+===================
+*/
+static void R_StudioLoadAnimatedTextures( model_t *mod, studiohdr_t *phdr )
+{
+	// render-affecting flags every frame must share with the animated texture
+	const uint32_t	flagmask = STUDIO_NF_MASKED | STUDIO_NF_ADDITIVE |
+		STUDIO_NF_NORMALMAP | STUDIO_NF_NOMIPS | STUDIO_NF_CHROME;
+
+	studio_animtex_model_t	*entry = NULL;
+	int		i;
+
+	// find the existing entry (by header, or by model when the T.mdl
+	// companion re-registers the same model with a merged header) or take
+	// a free registry slot
+	for( i = 0; i < MAX_STUDIO_ANIMTEX_MODELS; i++ )
+	{
+		if( s_animtex_models[i].phdr == phdr )
+		{
+			entry = &s_animtex_models[i];
+			break;
+		}
+
+		if( !entry && s_animtex_models[i].mod == mod )
+			entry = &s_animtex_models[i];
+
+		if( !entry && !s_animtex_models[i].phdr )
+			entry = &s_animtex_models[i];
+	}
+
+	if( !entry )
+		return; // registry full: animated textures degrade to static
+
+	entry->mod = mod;
+	entry->phdr = phdr;
+	entry->anims = NULL;
+
+	if( phdr->animextindex <= 0 )
+		return;
+
+	if( (size_t)phdr->animextindex + 12 > (size_t)phdr->length )
+	{
+		gEngfuncs.Con_Printf( S_WARN "studio: %s: animated texture block is out of range, ignoring\n", mod->name );
+		return;
+	}
+
+	const int32_t *pblock = (const int32_t *)((const byte *)phdr + phdr->animextindex);
+
+	if( pblock[0] != IDANIMTEXHEADER || pblock[1] != STUDIO_ANIMTEX_VERSION )
+	{
+		gEngfuncs.Con_Printf( S_WARN "studio: %s: animated texture block has a bad ident/version, ignoring\n", mod->name );
+		return;
+	}
+
+	const int numanimated = pblock[2];
+
+	if( numanimated < 0 || numanimated > phdr->numtextures )
+	{
+		gEngfuncs.Con_Printf( S_WARN "studio: %s: invalid animated texture count %i, ignoring\n", mod->name, numanimated );
+		return;
+	}
+
+	if( numanimated == 0 )
+		return;
+
+	mstudiotexture_t *ptexture = (mstudiotexture_t *)((byte *)phdr + phdr->textureindex);
+	const mstudioanimatedtexture_t *panim = (const mstudioanimatedtexture_t *)( pblock + 3 );
+
+	entry->anims = Mem_Calloc( mod->mempool, sizeof( studio_animtex_t ) * (size_t)phdr->numtextures );
+
+	for( i = 0; i < numanimated; i++ )
+	{
+		const mstudioanimatedtexture_t *desc = panim + i;
+		qboolean	valid = true;
+		int		j;
+
+		if( desc->framerate < 1 || desc->framerate > MAXSTUDIOANIMRATE ||
+			desc->numframes < 1 || desc->numframes > MAXSTUDIOANIMFRAMES ||
+			desc->textureindex < 0 || desc->textureindex >= phdr->numtextures )
+			valid = false;
+
+		if( valid && ( desc->frameoffset < 0 ||
+			(size_t)desc->frameoffset + (size_t)desc->numframes * sizeof( int32_t ) > (size_t)phdr->length ))
+			valid = false;
+
+		const int32_t *frames = NULL;
+
+		if( valid )
+		{
+			frames = (const int32_t *)((const byte *)phdr + desc->frameoffset);
+
+			// frame 0 must be the animated texture itself, so old engines
+			// that ignore the extension still display the first frame
+			if( frames[0] != desc->textureindex )
+				valid = false;
+
+			// every frame must be a valid texture sharing the render-affecting
+			// flags and the dimensions (the UVs are normalized against the
+			// animated texture's own width/height)
+			for( j = 0; valid && j < desc->numframes; j++ )
+			{
+				if( frames[j] < 0 || frames[j] >= phdr->numtextures )
+					valid = false;
+				else if(( ptexture[frames[j]].flags & flagmask ) != ( ptexture[desc->textureindex].flags & flagmask ))
+					valid = false;
+				else if( ptexture[frames[j]].width != ptexture[desc->textureindex].width ||
+					ptexture[frames[j]].height != ptexture[desc->textureindex].height )
+					valid = false;
+			}
+		}
+
+		if( !valid )
+		{
+			if( desc->textureindex >= 0 && desc->textureindex < phdr->numtextures )
+				ClearBits( ptexture[desc->textureindex].flags, STUDIO_NF_ANIMATED );
+			gEngfuncs.Con_Printf( S_WARN "studio: %s: invalid animated texture descriptor %i, using a static texture\n",
+				mod->name, i );
+			continue;
+		}
+
+		studio_animtex_t *anim = &entry->anims[desc->textureindex];
+
+		anim->framerate = desc->framerate;
+		anim->numframes = desc->numframes;
+		for( j = 0; j < desc->numframes; j++ )
+			anim->frame_texidx[j] = frames[j];
+	}
+}
+
+/*
 ===============
 R_StudioSetupSkin
 
@@ -1516,8 +1721,10 @@ static void R_StudioSetupSkin( studiohdr_t *ptexturehdr, int index )
 	}
 	else
 	{
+		const int frameindex = R_StudioAnimTexFrame( ptexturehdr, index );
+
 		R_StudioSetupRainbow( ptexture[index].flags );
-		GL_Bind( XASH_TEXTURE0, ptexture[index].index );
+		GL_Bind( XASH_TEXTURE0, ptexture[frameindex].index );
 		R_StudioSetupUVScroll( ptexture[index].flags );
 	}
 }
@@ -3744,6 +3951,8 @@ void Mod_StudioLoadTextures( model_t *mod, void *data )
 		for( int i = 0; i < phdr->numtextures; i++ )
 			R_StudioLoadTexture( mod, phdr, &ptexture[i] );
 	}
+
+	R_StudioLoadAnimatedTextures( mod, phdr );
 }
 
 /*
@@ -3757,6 +3966,21 @@ void Mod_StudioUnloadTextures( void *data )
 
 	if( !phdr )
 		return;
+
+	// drop the animated texture frame table; the memory dies with the model pool
+	for( int i = 0; i < MAX_STUDIO_ANIMTEX_MODELS; i++ )
+	{
+		if( s_animtex_models[i].phdr == phdr )
+		{
+			s_animtex_models[i].mod = NULL;
+			s_animtex_models[i].phdr = NULL;
+			s_animtex_models[i].anims = NULL;
+
+			if( s_last_animtex == &s_animtex_models[i] )
+				s_last_animtex = NULL;
+			break;
+		}
+	}
 
 	mstudiotexture_t *ptexture = (mstudiotexture_t *)(((byte *)phdr) + phdr->textureindex);
 

@@ -90,6 +90,7 @@ le_struct_begin( studiohdr_swap )
 	le_struct_field( studiohdr_t, numattachments )
 	le_struct_field( studiohdr_t, attachmentindex )
 	le_struct_field( studiohdr_t, studiohdr2index )
+	le_struct_field( studiohdr_t, animextindex )
 	le_struct_field( studiohdr_t, numtransitions )
 	le_struct_field( studiohdr_t, transitionindex )
 le_struct_end();
@@ -1075,6 +1076,55 @@ static qboolean Mod_SwapStudioModel( const char *name, void *buffer, size_t buff
 	short *pskinref = (short *)( mod_base + phdr->skinindex );
 	for( int i = 0; i < phdr->numskinfamilies * phdr->numskinref; i++ )
 		pskinref[i] = LittleShort( pskinref[i] );
+
+	// swap the animated texture extension block; a malformed block is left
+	// untouched, the renderer validates it again and degrades to static
+	// textures on failure
+	if( phdr->animextindex > 0 && (size_t)phdr->animextindex + 12 <= (size_t)phdr->length )
+	{
+		int32_t *pblock = (int32_t *)( mod_base + phdr->animextindex );
+
+		if( LittleLong( pblock[0] ) == IDANIMTEXHEADER )
+		{
+			int i;
+
+			pblock[0] = LittleLong( pblock[0] );
+			pblock[1] = LittleLong( pblock[1] );
+			int numanimated = pblock[2] = LittleLong( pblock[2] );
+
+			if( numanimated >= 0 && numanimated <= MAXSTUDIOANIMTEXTURES )
+			{
+				mstudioanimatedtexture_t *panim = (mstudioanimatedtexture_t *)( pblock + 3 );
+				qboolean broken = false;
+
+				for( i = 0; i < numanimated && !broken; i++ )
+				{
+					int32_t *pdesc = (int32_t *)( panim + i );
+
+					pdesc[0] = LittleLong( pdesc[0] ); // framerate
+					int numframes = pdesc[1] = LittleLong( pdesc[1] );
+					pdesc[2] = LittleLong( pdesc[2] ); // frameoffset
+					pdesc[3] = LittleLong( pdesc[3] ); // textureindex
+
+					if( numframes < 1 || numframes > MAXSTUDIOANIMFRAMES )
+					{
+						broken = true;
+						break;
+					}
+
+					if( pdesc[2] < 0 || (size_t)pdesc[2] + (size_t)numframes * sizeof( int32_t ) > (size_t)phdr->length )
+					{
+						broken = true;
+						break;
+					}
+
+					int32_t *pframes = (int32_t *)( mod_base + pdesc[2] );
+					for( int j = 0; j < numframes; j++ )
+						pframes[j] = LittleLong( pframes[j] );
+				}
+			}
+		}
+	}
 #endif
 
 	return true;

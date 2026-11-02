@@ -91,6 +91,7 @@ Studio models are position independent, so the cache manager can move them.
 // direction, the flow itself is a separate effect from the UV scroll
 #define STUDIO_NF_RAINBOW_FLOW			(1U<<22)	// rainbow flow in the forward U direction
 #define STUDIO_NF_RAINBOW_FLOW_REVERSE	(1U<<23)	// rainbow flow in the reverse U direction
+#define STUDIO_NF_ANIMATED			(1U<<24)	// animated texture, frames from the animextindex extension block
 
 #define STUDIO_NF_NODRAW		(1U<<16)	// failed to create shader for this mesh
 #define STUDIO_NF_NODLIGHT		(1U<<17)	// failed to create dlight shader for this mesh
@@ -247,8 +248,8 @@ typedef struct studiohdr_s
 	// was "soundgroups"
 	int32_t		unused2;
 
-	// was "soundgroupindex"
-	int32_t		unused3;
+	// offset to the animated texture extension block (0 = none), was "soundgroupindex"
+	int32_t		animextindex;
 
 	// the number of nodes in the sequence transition graph
 	int32_t		numtransitions;
@@ -903,6 +904,50 @@ typedef struct mstudiotex_s
 	// this offset is relative to the texture file header
 	int32_t		index;
 } mstudiotexture_t;
+
+/*
+================
+animated texture extension
+
+A model can mark any texture entry with STUDIO_NF_ANIMATED and provide an
+extension block located via studiohdr_t::animextindex. The block starts
+with a 12-byte header and is followed by the animation descriptors and the
+frame index arrays:
+
+	[magic IDANIMTEXHEADER int32][version int32][numanimated int32]
+	[mstudioanimatedtexture_t x numanimated]
+	[per descriptor: int32_t[numframes] texture table indices]
+
+All offsets are relative to the main studio header. The texture table entry
+driven by a descriptor (textureindex) must carry STUDIO_NF_ANIMATED and its
+pixels are the first frame, so old engines that ignore the extension still
+display frame 0. See the format specification for the full constraints.
+================
+*/
+#define IDANIMTEXHEADER		(('A'<<24)+('T'<<16)+('A'<<8)+'S')	// little-endian "SATA"
+#define STUDIO_ANIMTEX_VERSION	1
+
+#define MAXSTUDIOANIMTEXTURES	256	// total animated textures
+#define MAXSTUDIOANIMFRAMES	32	// max frames per animated texture
+#define MAXSTUDIOANIMRATE	1024	// max playback rate, frames per second
+
+typedef struct mstudioanimatedtexture_s
+{
+	// playback rate in frames per second, 1..MAXSTUDIOANIMRATE
+	int32_t		framerate;
+
+	// number of frames, 1..MAXSTUDIOANIMFRAMES
+	int32_t		numframes;
+
+	// offset to int32_t[numframes] texture table indices, relative to the main studio header
+	int32_t		frameoffset;
+
+	// texture table entry this animation drives (frames[0] must equal it)
+	int32_t		textureindex;
+
+	// reserved, must be zero
+	int32_t		padding[4];
+} mstudioanimatedtexture_t;
 
 // ikinfo
 typedef struct
